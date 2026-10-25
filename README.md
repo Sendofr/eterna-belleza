@@ -67,4 +67,6 @@ npm run preview -- --port 4174
 
 Publicá `dist/` en un hosting estático con **fallback SPA hacia `/index.html`** para que `/admin` funcione al abrirlo directamente. Incluimos `public/_redirects` para hosts compatibles con ese formato. Definí las variables públicas de Supabase antes de compilar y configurá Site URL en Supabase Auth.
 
+En Netlify, `netlify.toml` establece automáticamente `npm run build` como compilación y `dist` como carpeta publicada. Al importar el repositorio por primera vez, confirmá que use la rama `main` y agregá las variables públicas de Supabase antes de desplegar.
+
 No hace falta un servidor Node de producción para servir la web. Las operaciones protegidas se resuelven mediante Supabase y RLS, no mediante el servidor de Vite. No publiques el catálogo real hasta completar la conexión, la autorización del dueño y las comprobaciones remotas de la guía.
