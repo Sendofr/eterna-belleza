@@ -46,6 +46,28 @@ Reiniciá `npm run dev` después de editar las variables; reconstruí `npm run b
 
 En **Authentication → URL Configuration**, configurá Site URL y las redirect URLs del dominio final; añadí también el origen de desarrollo si vas a usar enlaces de recuperación. La autenticación actual usa correo/contraseña. No requiere Google OAuth ni acceso a la sesión de la demo de Terramoda.
 
+### Si publicás en Vercel
+
+En el proyecto de Vercel abrí **Settings → Environment Variables** y agregá `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` con los datos públicos del mismo proyecto Supabase donde creaste al usuario. Habilitalas para **Production** (y Preview si lo usás). Un archivo `.env.local` en tu computadora no configura Vercel.
+
+Si ya configuraste `VITE_SUPABASE_ANON_KEY` con la clave pública anon, podés conservarla: la aplicación acepta ese alias. No hace falta agregar la otra variable de clave.
+
+Después de guardar las variables, hacé un **Redeploy**: Vite las incorpora durante la compilación. Usá el preset **Vite**, comando `npm run build`, salida `dist` y rama de producción `main`. El archivo `vercel.json` en la raíz configura el acceso directo a `/admin`.
+
+Para comprobar la autorización, ejecutá esto en el SQL Editor de Supabase:
+
+```sql
+select u.id, u.email, o.display_name,
+       (o.user_id is not null) as tiene_acceso_al_inventario
+from auth.users u
+left join public.owner_accounts o on o.user_id = u.id
+order by u.created_at desc;
+```
+
+Buscá la fila del correo de Zuni. Si `tiene_acceso_al_inventario` es `false`, autorizá su UUID con el `insert` del paso 2. Esta consulta es administrativa: no debe incorporarse al frontend ni compartirse públicamente.
+
+Al abrir `/admin`: «Explorar inventario de ejemplo» indica que faltan ambas variables en el build; formulario de correo y contraseña indica que se configuró la conexión, pero no prueba por sí solo que las claves o permisos sean correctos. El mensaje de cuenta sin acceso indica que falta autorizar el UUID. Entrar, guardar una prenda y verla después de recargar comprueba el flujo completo.
+
 ## 4. Qué protege el SQL
 
 - `products`: anónimos y usuarios comunes solo pueden leer prendas visibles y no archivadas. El stock cero sigue visible como agotado.
