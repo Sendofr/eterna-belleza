@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Archive,
   ArrowDownToLine,
@@ -14,6 +14,8 @@ import {
   Plus,
   Search,
   Sparkles,
+  ChartNoAxesCombined,
+  LockKeyhole,
   X,
 } from 'lucide-react'
 import {
@@ -30,6 +32,8 @@ import { isConfigured } from '../lib/supabase'
 import { convertToWebP } from '../lib/images'
 import { exportProductsCsv, formatPrice } from '../lib/utils'
 import { Modal } from './Modal'
+import Finance from './Finance'
+import { getProductCosts } from '../lib/finance'
 import '../admin.css'
 
 interface AdminProps {
@@ -57,19 +61,35 @@ const blank: ProductInput = {
 
 function ProductForm({
   product,
+  purchaseCost,
   onClose,
   onSaved,
   onWarning,
 }: {
   product?: Product
+  purchaseCost?: number
   onClose: () => void
   onSaved: (warning?: string) => Promise<void>
   onWarning: (message: string) => void
 }) {
   const [form, setForm] = useState<ProductInput>(
-    product ? { ...product } : { ...blank },
+    product
+      ? {
+          name: product.name,
+          sku: product.sku,
+          category: product.category,
+          size: product.size,
+          price: product.price,
+          stock: product.stock,
+          image_path: product.image_path,
+          visible: product.visible,
+          archived: product.archived,
+          is_example: product.is_example,
+        }
+      : { ...blank },
   )
   const [price, setPrice] = useState(product?.price?.toString() ?? '')
+  const [cost, setCost] = useState(purchaseCost?.toString() ?? '')
   const [stock, setStockValue] = useState(String(product?.stock ?? 1))
   const [image, setImage] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -98,8 +118,7 @@ function ProductForm({
     [preview],
   )
   const valid =
-    !!form.name.trim() &&
-    !!form.sku.trim() &&
+    form.name.trim().length <= 160 &&
     stock !== '' &&
     Number.isInteger(Number(stock)) &&
     Number(stock) >= 0 &&
@@ -107,7 +126,11 @@ function ProductForm({
     (price === '' ||
       (Number.isFinite(Number(price)) &&
         Number(price) >= 0 &&
-        Number(price) <= 1_000_000_000))
+        Number(price) <= 1_000_000_000)) &&
+    (cost === '' ||
+      (Number.isInteger(Number(cost)) &&
+        Number(cost) >= 0 &&
+        Number(cost) <= 1_000_000_000))
   async function selectImage(file?: File) {
     if (!file) return
     setConverting(true)
@@ -141,7 +164,7 @@ function ProductForm({
         setForm((current) => ({ ...current, image_path: path }))
         setImage(null)
       }
-      await saveProduct(
+      const saved = await saveProduct(
         {
           ...form,
           price: price === '' ? null : Number(price),
@@ -149,6 +172,7 @@ function ProductForm({
           image_path: path,
         },
         product?.id,
+        cost === '' ? null : Number(cost),
       )
       if (path) unusedUploads.current.delete(path)
       let warning: string | undefined
@@ -162,7 +186,7 @@ function ProductForm({
       }
       // The product is already saved. A failed refresh must not turn a retry into a duplicate creation.
       try {
-        await onSaved(warning)
+        await onSaved(warning || `Prenda ${saved.sku} guardada correctamente.`)
       } catch {
         /* The application displays refresh errors separately. */
       }
@@ -242,28 +266,35 @@ function ProductForm({
               Nombre de la prenda
               <input
                 autoFocus
-                required
+                aria-label="Nombre de la prenda"
                 maxLength={160}
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Ej. Vestido floral"
+                placeholder={`${form.category}${form.size.trim() ? ` · ${form.size.trim()}` : ''}`}
                 disabled={busy}
               />
+              <small>
+                Opcional. Si lo dejás vacío, usamos la categoría y el talle.
+              </small>
             </label>
             <label className="admin-field">
-              Código / SKU
+              Código automático
               <input
-                required
-                maxLength={64}
-                value={form.sku}
-                onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                placeholder="Ej. EB-001"
-                disabled={busy}
+                aria-label="Código automático"
+                readOnly
+                value={product?.sku || 'Se genera al guardar'}
+                className="admin-auto-code"
               />
+              <small>
+                {product
+                  ? 'Este código identifica tu prenda y se conserva.'
+                  : 'Único y automático: EB-0001, EB-0002…'}
+              </small>
             </label>
             <label className="admin-field">
               Categoría
               <select
+                aria-label="Categoría"
                 value={form.category}
                 onChange={(e) => setForm({ ...form, category: e.target.value })}
                 disabled={busy}
@@ -284,9 +315,9 @@ function ProductForm({
               />
             </label>
             <label className="admin-field">
-              Precio (Gs.)
+              Precio de venta (Gs.)
               <input
-                aria-label="Precio (Gs.)"
+                aria-label="Precio de venta (Gs.)"
                 type="number"
                 min="0"
                 max="1000000000"
@@ -297,6 +328,24 @@ function ProductForm({
                 disabled={busy}
               />
               <small>Dejá vacío para consultar.</small>
+            </label>
+            <label className="admin-field">
+              Precio de compra (Gs.)
+              <input
+                aria-label="Precio de compra (Gs.)"
+                type="number"
+                min="0"
+                max="1000000000"
+                step="1"
+                value={cost}
+                onChange={(e) => setCost(e.target.value)}
+                placeholder="Sin costo cargado"
+                disabled={busy}
+              />
+              <small className="admin-private-note">
+                <LockKeyhole size={10} />
+                Solo administración. Necesario para registrar ventas.
+              </small>
             </label>
             <label className="admin-field">
               Unidades en stock
@@ -361,6 +410,11 @@ export default function Admin({
   ownerName,
 }: AdminProps) {
   const [archived, setArchived] = useState(false)
+  const [financeOpen, setFinanceOpen] = useState(false)
+  const [costs, setCosts] = useState<Record<string, number>>({})
+  const [costsBusy, setCostsBusy] = useState(true)
+  const [costsReady, setCostsReady] = useState(false)
+  const [costsError, setCostsError] = useState('')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [status, setStatus] = useState('all')
@@ -369,6 +423,36 @@ export default function Admin({
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [sideOpen, setSideOpen] = useState(false)
+  const costsRequest = useRef(0)
+  const loadCosts = useCallback(async () => {
+    const request = ++costsRequest.current
+    setCostsBusy(true)
+    try {
+      const next = await getProductCosts()
+      if (request === costsRequest.current) {
+        setCosts(next)
+        setCostsError('')
+        setCostsReady(true)
+      }
+    } catch (e) {
+      if (request === costsRequest.current) {
+        setCostsError(getError(e))
+        setCostsReady(false)
+      }
+      throw e
+    } finally {
+      if (request === costsRequest.current) setCostsBusy(false)
+    }
+  }, [])
+  useEffect(() => {
+    void loadCosts().catch(() => {})
+    return () => {
+      ++costsRequest.current
+    }
+  }, [loadCosts])
+  async function refreshInventory() {
+    await Promise.all([refresh(), loadCosts()])
+  }
   const activeProducts = products.filter((product) => !product.archived)
   const archiveProducts = products.filter((product) => product.archived)
   const displayedProducts = products
@@ -380,7 +464,8 @@ export default function Admin({
         (status === 'visible' && product.visible) ||
         (status === 'hidden' && !product.visible) ||
         (status === 'low' && product.stock > 0 && product.stock <= 2) ||
-        (status === 'empty' && product.stock === 0),
+        (status === 'empty' && product.stock === 0) ||
+        (status === 'missing-cost' && costs[product.id] === undefined),
     )
     .filter((product) =>
       `${product.name} ${product.sku} ${product.size}`
@@ -403,6 +488,7 @@ export default function Admin({
     }
   }
   function navigateArchive(next: boolean) {
+    setFinanceOpen(false)
     setArchived(next)
     setStatus('all')
     setSearch('')
@@ -465,7 +551,7 @@ export default function Admin({
         <span className="admin-nav-heading">MI NEGOCIO</span>
         <nav aria-label="Administración">
           <button
-            className={!archived ? 'active' : ''}
+            className={!financeOpen && !archived ? 'active' : ''}
             onClick={() => navigateArchive(false)}
           >
             <Grid2X2 size={17} />
@@ -473,12 +559,22 @@ export default function Admin({
             <small>{activeProducts.length}</small>
           </button>
           <button
-            className={archived ? 'active' : ''}
+            className={!financeOpen && archived ? 'active' : ''}
             onClick={() => navigateArchive(true)}
           >
             <Archive size={17} />
             <span>Archivadas</span>
             <small>{archiveProducts.length}</small>
+          </button>
+          <button
+            className={financeOpen ? 'active' : ''}
+            onClick={() => {
+              setFinanceOpen(true)
+              setSideOpen(false)
+            }}
+          >
+            <ChartNoAxesCombined size={17} />
+            <span>Finanzas</span>
           </button>
           <a href="/">
             <ArrowUpRight size={17} />
@@ -522,7 +618,13 @@ export default function Admin({
         <header className="admin-topbar">
           <div>
             Administración <span>/</span>
-            <strong>{archived ? 'Archivadas' : 'Inventario'}</strong>
+            <strong>
+              {financeOpen
+                ? 'Finanzas'
+                : archived
+                  ? 'Archivadas'
+                  : 'Inventario'}
+            </strong>
           </div>
           <span className="admin-sync">
             <i />
@@ -534,297 +636,378 @@ export default function Admin({
           </span>
         </header>
         <main className="admin-main">
-          <div className="admin-page-heading">
-            <div>
-              <span className="eyebrow">TODO EN SU LUGAR</span>
-              <h1>{archived ? 'Tus archivadas.' : 'Tu inventario.'}</h1>
-              <p>
-                {archived
-                  ? 'Prendas guardadas, listas para una nueva oportunidad.'
-                  : 'Prendas, precios y stock. El control de tu tienda, acá.'}
-              </p>
-            </div>
-            <button
-              className="admin-primary-button"
-              onClick={() => setEditing('new')}
-            >
-              <Plus size={16} />
-              Nueva prenda
-            </button>
-          </div>
-          <div className="admin-metrics">
-            {metrics.map((metric) => (
-              <article className="admin-metric" key={metric.title}>
-                <div>
-                  <span>{metric.title}</span>
-                  {metric.icon}
-                </div>
-                <strong>{String(metric.value).padStart(2, '0')}</strong>
-                <small>{metric.note}</small>
-              </article>
-            ))}
-          </div>
-          {!isConfigured && (
-            <div className="admin-info-notice">
-              <Leaf size={16} />
-              <span>
-                <strong>Modo demostración.</strong> Los cambios se guardan solo
-                en este navegador. Conectá Supabase para administrar el
-                inventario real.
-              </span>
-            </div>
-          )}
-          {products.some((p) => p.is_example) && (
-            <div className="admin-example-notice">
-              <CircleHelp size={14} />
-              <span>
-                Las prendas marcadas «Ejemplo» tienen stock ilustrativo. Podés
-                editarlas o archivarlas para preparar el catálogo real.
-              </span>
-            </div>
-          )}
-          {error && (
+          {costsError && (
             <div role="alert" className="admin-error-notice">
-              {error}
-              <button onClick={() => setError('')} aria-label="Cerrar aviso">
-                <X size={15} />
-              </button>
-            </div>
-          )}
-          {notice && (
-            <div role="status" className="admin-success-notice">
-              <Check size={15} />
-              {notice}
-            </div>
-          )}
-          <section
-            className="admin-inventory-panel"
-            aria-label={
-              archived ? 'Prendas archivadas' : 'Inventario de prendas'
-            }
-          >
-            <div className="admin-panel-heading">
-              <h2>
-                {archived ? 'Prendas archivadas' : 'Todas tus prendas'}
-                <span>{displayedProducts.length} resultados</span>
-              </h2>
+              <span>No pudimos cargar los costos de compra. {costsError}</span>
               <button
-                className="admin-outline-button admin-export"
-                onClick={() => {
-                  exportProductsCsv(displayedProducts)
-                  setNotice('CSV exportado con las prendas del filtro actual.')
-                }}
+                className="admin-inline-retry"
+                disabled={costsBusy}
+                onClick={() => void loadCosts().catch(() => {})}
               >
-                <ArrowDownToLine size={14} />
-                Exportar CSV
+                {costsBusy ? 'Cargando…' : 'Reintentar'}
               </button>
             </div>
-            <div className="admin-filters">
-              <label className="admin-search">
-                <Search size={17} />
-                <input
-                  type="search"
-                  placeholder="Buscar prenda, código o talle…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  aria-label="Buscar prenda, código o talle"
-                />
-              </label>
-              <label className="admin-select-label">
-                <span className="admin-sr-only">Filtrar categoría</span>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  <option value="all">Todas las categorías</option>
-                  {CATEGORIES.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-                <ChevronDown size={14} />
-              </label>
-              <label className="admin-select-label">
-                <span className="admin-sr-only">Filtrar estado</span>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                >
-                  <option value="all">
-                    {archived ? 'Todas las archivadas' : 'Todas las activas'}
-                  </option>
-                  <option value="visible">Visibles en catálogo</option>
-                  <option value="hidden">Ocultas del catálogo</option>
-                  <option value="low">Pocas unidades</option>
-                  <option value="empty">Agotadas</option>
-                </select>
-                <ChevronDown size={14} />
-              </label>
-            </div>
-            <p className="admin-table-hint">
-              Deslizá la tabla para ver stock y acciones →
-            </p>
-            <div
-              className="admin-table-scroll"
-              tabIndex={0}
-              role="region"
-              aria-label="Tabla de inventario con desplazamiento horizontal"
-            >
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Prenda</th>
-                    <th>Categoría / talle</th>
-                    <th>Precio</th>
-                    <th>Stock</th>
-                    <th>Catálogo</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayedProducts.map((product) => (
-                    <tr key={product.id}>
-                      <td>
-                        <div className="admin-table-product">
-                          <img src={imageUrl(product.image_path)} alt="" />
-                          <div>
-                            <strong>{product.name}</strong>
-                            <small>
-                              {product.sku}
-                              {product.is_example && ' · Ejemplo'}
-                            </small>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        {product.category}
-                        <small>{product.size || 'A confirmar'}</small>
-                      </td>
-                      <td>{formatPrice(product.price)}</td>
-                      <td>
-                        <div className="admin-stock-controls">
-                          <button
-                            disabled={busy || product.stock === 0}
-                            aria-label={`Quitar una unidad de ${product.name}`}
-                            onClick={() =>
-                              void mutate(
-                                () => setStock(product, -1),
-                                `Stock de ${product.name} actualizado.`,
-                              )
-                            }
-                          >
-                            <Minus size={12} />
-                          </button>
-                          <span>{product.stock}</span>
-                          <button
-                            disabled={busy || product.stock >= 1_000_000}
-                            aria-label={`Agregar una unidad de ${product.name}`}
-                            onClick={() =>
-                              void mutate(
-                                () => setStock(product, 1),
-                                `Stock de ${product.name} actualizado.`,
-                              )
-                            }
-                          >
-                            <Plus size={12} />
-                          </button>
-                        </div>
-                        {product.stock <= 2 && (
-                          <small
-                            className={
-                              product.stock === 0
-                                ? 'admin-out-of-stock'
-                                : 'admin-low-stock'
-                            }
-                          >
-                            {product.stock === 0 ? 'Agotada' : 'Pocas unidades'}
-                          </small>
-                        )}
-                      </td>
-                      <td>
-                        <span
-                          className={`admin-catalog-state ${!product.visible || product.archived ? 'is-hidden' : ''}`}
-                        >
-                          <i />
-                          {product.archived
-                            ? 'Archivada'
-                            : product.visible
-                              ? 'Visible'
-                              : 'Oculta'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="admin-row-actions">
-                          <button
-                            onClick={() => setEditing(product)}
-                            disabled={busy}
-                          >
-                            Editar <ArrowUpRight size={10} />
-                          </button>
-                          <button
-                            onClick={() =>
-                              void mutate(
-                                () =>
-                                  archiveProduct(product.id, !product.archived),
-                                product.archived
-                                  ? `${product.name} restaurada.`
-                                  : `${product.name} archivada. Podés restaurarla desde Archivadas.`,
-                              )
-                            }
-                            disabled={busy}
-                          >
-                            {product.archived ? 'Restaurar' : 'Archivar'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {displayedProducts.length === 0 && (
-              <div className="admin-empty">
-                <Archive size={28} strokeWidth={1.3} />
-                <h3>
-                  {search || category !== 'all' || status !== 'all'
-                    ? 'No encontramos esas prendas.'
-                    : archived
-                      ? 'Todavía no hay prendas archivadas.'
-                      : 'Tu próxima colección empieza acá.'}
-                </h3>
-                <p>
-                  {search || category !== 'all' || status !== 'all'
-                    ? 'Probá con otra búsqueda o cambiá los filtros.'
-                    : archived
-                      ? 'Las prendas que archives aparecerán en esta sección.'
-                      : 'Agregá tu primera prenda para verla en el catálogo.'}
+          )}
+          {financeOpen ? (
+            costsReady ? (
+              <Finance
+                products={products}
+                costs={costs}
+                onInventoryChange={refreshInventory}
+              />
+            ) : (
+              !costsError && (
+                <p className="admin-cost-loading" role="status">
+                  Preparando tus finanzas…
                 </p>
-                {!archived &&
-                  !search &&
-                  category === 'all' &&
-                  status === 'all' && (
-                    <button
-                      className="admin-primary-button"
-                      onClick={() => setEditing('new')}
-                    >
-                      <Plus size={15} />
-                      Nueva prenda
-                    </button>
-                  )}
+              )
+            )
+          ) : (
+            <>
+              <div className="admin-page-heading">
+                <div>
+                  <span className="eyebrow">TODO EN SU LUGAR</span>
+                  <h1>{archived ? 'Tus archivadas.' : 'Tu inventario.'}</h1>
+                  <p>
+                    {archived
+                      ? 'Prendas guardadas, listas para una nueva oportunidad.'
+                      : 'Prendas, precios y stock. El control de tu tienda, acá.'}
+                  </p>
+                </div>
+                <button
+                  className="admin-primary-button"
+                  onClick={() => setEditing('new')}
+                  disabled={costsBusy || !costsReady}
+                >
+                  <Plus size={16} />
+                  Nueva prenda
+                </button>
               </div>
-            )}
-          </section>
-          <p className="admin-bottom-note">
-            Eterna Belleza · Tu tienda, en tus manos.
-          </p>
+              <div className="admin-flow-note">
+                <div>
+                  <ChartNoAxesCombined size={18} />
+                  <span>
+                    <strong>Cada venta cuenta.</strong> Registrá tus ventas en
+                    Finanzas para conocer la ganancia del mes. Los botones de
+                    stock son ajustes de inventario.
+                  </span>
+                </div>
+                <button
+                  onClick={() => {
+                    setFinanceOpen(true)
+                    setSideOpen(false)
+                  }}
+                >
+                  Ver mis finanzas <ArrowUpRight size={14} />
+                </button>
+              </div>
+              <div className="admin-metrics">
+                {metrics.map((metric) => (
+                  <article className="admin-metric" key={metric.title}>
+                    <div>
+                      <span>{metric.title}</span>
+                      {metric.icon}
+                    </div>
+                    <strong>{String(metric.value).padStart(2, '0')}</strong>
+                    <small>{metric.note}</small>
+                  </article>
+                ))}
+              </div>
+              {!isConfigured && (
+                <div className="admin-info-notice">
+                  <Leaf size={16} />
+                  <span>
+                    <strong>Modo demostración.</strong> Los cambios se guardan
+                    solo en este navegador. Conectá Supabase para administrar el
+                    inventario real.
+                  </span>
+                </div>
+              )}
+              {products.some((p) => p.is_example) && (
+                <div className="admin-example-notice">
+                  <CircleHelp size={14} />
+                  <span>
+                    Las prendas marcadas «Ejemplo» tienen stock ilustrativo.
+                    Podés editarlas o archivarlas para preparar el catálogo
+                    real.
+                  </span>
+                </div>
+              )}
+              {error && (
+                <div role="alert" className="admin-error-notice">
+                  {error}
+                  <button
+                    onClick={() => setError('')}
+                    aria-label="Cerrar aviso"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              )}
+              {notice && (
+                <div role="status" className="admin-success-notice">
+                  <Check size={15} />
+                  {notice}
+                </div>
+              )}
+              <section
+                className="admin-inventory-panel"
+                aria-label={
+                  archived ? 'Prendas archivadas' : 'Inventario de prendas'
+                }
+              >
+                <div className="admin-panel-heading">
+                  <h2>
+                    {archived ? 'Prendas archivadas' : 'Todas tus prendas'}
+                    <span>{displayedProducts.length} resultados</span>
+                  </h2>
+                  <button
+                    className="admin-outline-button admin-export"
+                    onClick={() => {
+                      exportProductsCsv(displayedProducts)
+                      setNotice(
+                        'CSV exportado con las prendas del filtro actual.',
+                      )
+                    }}
+                  >
+                    <ArrowDownToLine size={14} />
+                    Exportar CSV
+                  </button>
+                </div>
+                <div className="admin-filters">
+                  <label className="admin-search">
+                    <Search size={17} />
+                    <input
+                      type="search"
+                      placeholder="Buscar prenda, código o talle…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      aria-label="Buscar prenda, código o talle"
+                    />
+                  </label>
+                  <label className="admin-select-label">
+                    <span className="admin-sr-only">Filtrar categoría</span>
+                    <select
+                      value={category}
+                      onChange={(e) => setCategory(e.target.value)}
+                    >
+                      <option value="all">Todas las categorías</option>
+                      {CATEGORIES.map((c) => (
+                        <option key={c}>{c}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={14} />
+                  </label>
+                  <label className="admin-select-label">
+                    <span className="admin-sr-only">Filtrar estado</span>
+                    <select
+                      value={status}
+                      onChange={(e) => setStatus(e.target.value)}
+                    >
+                      <option value="all">
+                        {archived
+                          ? 'Todas las archivadas'
+                          : 'Todas las activas'}
+                      </option>
+                      <option value="visible">Visibles en catálogo</option>
+                      <option value="hidden">Ocultas del catálogo</option>
+                      <option value="low">Pocas unidades</option>
+                      <option value="empty">Agotadas</option>
+                      <option value="missing-cost">Sin costo de compra</option>
+                    </select>
+                    <ChevronDown size={14} />
+                  </label>
+                </div>
+                <p className="admin-table-hint">
+                  Deslizá la tabla para ver stock y acciones →
+                </p>
+                <div
+                  className="admin-table-scroll"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Tabla de inventario con desplazamiento horizontal"
+                >
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Prenda</th>
+                        <th>Categoría / talle</th>
+                        <th>Venta / compra</th>
+                        <th>Stock</th>
+                        <th>Catálogo</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayedProducts.map((product) => (
+                        <tr key={product.id}>
+                          <td>
+                            <div className="admin-table-product">
+                              <img src={imageUrl(product.image_path)} alt="" />
+                              <div>
+                                <strong>{product.name}</strong>
+                                <small>
+                                  {product.sku}
+                                  {product.is_example && ' · Ejemplo'}
+                                </small>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            {product.category}
+                            <small>{product.size || 'A confirmar'}</small>
+                          </td>
+                          <td>
+                            {formatPrice(product.price)}
+                            <small
+                              className={
+                                costs[product.id] === undefined
+                                  ? 'admin-missing-cost'
+                                  : 'admin-cost-value'
+                              }
+                            >
+                              <LockKeyhole size={9} />
+                              {costsBusy
+                                ? 'Cargando costo…'
+                                : costs[product.id] === undefined
+                                  ? 'Sin costo cargado'
+                                  : `Compra: ${formatPrice(costs[product.id])}`}
+                            </small>
+                          </td>
+                          <td>
+                            <div className="admin-stock-controls">
+                              <button
+                                disabled={busy || product.stock === 0}
+                                aria-label={`Quitar una unidad de ${product.name}`}
+                                onClick={() =>
+                                  void mutate(
+                                    () => setStock(product, -1),
+                                    `Stock de ${product.name} actualizado.`,
+                                  )
+                                }
+                              >
+                                <Minus size={12} />
+                              </button>
+                              <span>{product.stock}</span>
+                              <button
+                                disabled={busy || product.stock >= 1_000_000}
+                                aria-label={`Agregar una unidad de ${product.name}`}
+                                onClick={() =>
+                                  void mutate(
+                                    () => setStock(product, 1),
+                                    `Stock de ${product.name} actualizado.`,
+                                  )
+                                }
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </div>
+                            {product.stock <= 2 && (
+                              <small
+                                className={
+                                  product.stock === 0
+                                    ? 'admin-out-of-stock'
+                                    : 'admin-low-stock'
+                                }
+                              >
+                                {product.stock === 0
+                                  ? 'Agotada'
+                                  : 'Pocas unidades'}
+                              </small>
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              className={`admin-catalog-state ${!product.visible || product.archived ? 'is-hidden' : ''}`}
+                            >
+                              <i />
+                              {product.archived
+                                ? 'Archivada'
+                                : product.visible
+                                  ? 'Visible'
+                                  : 'Oculta'}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="admin-row-actions">
+                              <button
+                                onClick={() => setEditing(product)}
+                                disabled={busy || costsBusy || !costsReady}
+                              >
+                                Editar <ArrowUpRight size={10} />
+                              </button>
+                              <button
+                                onClick={() =>
+                                  void mutate(
+                                    () =>
+                                      archiveProduct(
+                                        product.id,
+                                        !product.archived,
+                                      ),
+                                    product.archived
+                                      ? `${product.name} restaurada.`
+                                      : `${product.name} archivada. Podés restaurarla desde Archivadas.`,
+                                  )
+                                }
+                                disabled={busy}
+                              >
+                                {product.archived ? 'Restaurar' : 'Archivar'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {displayedProducts.length === 0 && (
+                  <div className="admin-empty">
+                    <Archive size={28} strokeWidth={1.3} />
+                    <h3>
+                      {search || category !== 'all' || status !== 'all'
+                        ? 'No encontramos esas prendas.'
+                        : archived
+                          ? 'Todavía no hay prendas archivadas.'
+                          : 'Tu próxima colección empieza acá.'}
+                    </h3>
+                    <p>
+                      {search || category !== 'all' || status !== 'all'
+                        ? 'Probá con otra búsqueda o cambiá los filtros.'
+                        : archived
+                          ? 'Las prendas que archives aparecerán en esta sección.'
+                          : 'Agregá tu primera prenda para verla en el catálogo.'}
+                    </p>
+                    {!archived &&
+                      !search &&
+                      category === 'all' &&
+                      status === 'all' && (
+                        <button
+                          className="admin-primary-button"
+                          onClick={() => setEditing('new')}
+                          disabled={costsBusy || !costsReady}
+                        >
+                          <Plus size={15} />
+                          Nueva prenda
+                        </button>
+                      )}
+                  </div>
+                )}
+              </section>
+              <p className="admin-bottom-note">
+                Eterna Belleza · Tu tienda, en tus manos.
+              </p>
+            </>
+          )}
         </main>
       </div>
       {editing && (
         <ProductForm
           product={editing === 'new' ? undefined : editing}
+          purchaseCost={editing === 'new' ? undefined : costs[editing.id]}
           onClose={() => setEditing(null)}
           onSaved={async (warning) => {
             setNotice(warning || 'Prenda guardada correctamente.')
-            await refresh()
+            await refreshInventory()
           }}
           onWarning={setNotice}
         />

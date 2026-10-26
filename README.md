@@ -1,6 +1,10 @@
 # Eterna Belleza
 
-Primera versión de la tienda y el inventario, basada en la demo Terramoda y las capturas aportadas. React 19 + TypeScript + Vite; backend opcional Supabase (PostgreSQL, Auth y Storage). Trabajo aislado en `feat/eterna-belleza-v1`; no se crea ni modifica `main`.
+Tienda, inventario y finanzas de Eterna Belleza, basados en la demo Terramoda y las capturas aportadas. React 19 + TypeScript + Vite; backend Supabase (PostgreSQL, Auth y Storage) y despliegue estático en Netlify. Sin configuración remota puede explorarse una demostración local.
+
+## Actualizar una tienda que ya está funcionando
+
+Antes de publicar la actualización de códigos y finanzas, ejecutá [`supabase/migrations/20261026_inventory_finance.sql`](supabase/migrations/20261026_inventory_finance.sql) en el SQL Editor de tu proyecto Supabase. Conserva los datos y los códigos existentes. La [guía de finanzas](docs/FINANZAS.md) explica el orden de actualización y cómo registrar ventas y gastos. En un proyecto vacío, ejecutá primero `supabase/schema.sql` y luego la migración.
 
 ## Probar la web
 
@@ -20,7 +24,7 @@ Sin variables Supabase, la aplicación muestra un **modo demostración local**. 
 
 Seguí [la guía de Supabase](docs/SUPABASE.md). El archivo SQL completo está en [`supabase/schema.sql`](supabase/schema.sql).
 
-1. Creá el proyecto y ejecutá el SQL en su SQL Editor.
+1. Creá el proyecto y ejecutá `supabase/schema.sql` y después `supabase/migrations/20261026_inventory_finance.sql` en su SQL Editor.
 2. Creá tu usuario en Authentication y autorizá su UUID en `owner_accounts`.
 3. Copiá `.env.example` a `.env.local` y definí `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` (clave pública).
 4. Reiniciá el servidor. El modo local desaparece y el inventario real empieza vacío.
@@ -32,6 +36,9 @@ No se deben poner claves `service_role`, secretos ni contraseñas en variables `
 - Mismo recorrido público de referencia: cabecera, portada, franja de valores, colección, esencia, tres pasos, ubicación, CTA y pie.
 - Catálogo responsive, búsqueda, categorías, disponibilidad, orden, modal de detalle, consulta copiable y enlaces de WhatsApp con prenda/SKU/talle.
 - Panel con métricas, búsqueda, filtros, exportación CSV, altas/edición, stock, visibilidad y archivo/restauración.
+- Códigos automáticos únicos `EB-0001` en la base de datos, nombre opcional y categorías Shorts, Blazers, Camisas e Infantiles. Los códigos existentes se conservan.
+- Precio de compra privado, ventas con descuento automático de stock, gastos y resumen mensual animado de ganancias. El costo histórico se conserva por venta; anular una venta restaura el stock una sola vez.
+- Medios de pago Efectivo y Transferencia en cada tarjeta y detalle; Instagram y TikTok de la tienda en el pie.
 - Conversión real de JPG/PNG/WebP a WebP en el navegador: lado mayor de hasta 1600 px, compresión y límite de salida de 2 MiB. Entrada máxima de 20 MiB. Storage también restringe MIME y tamaño.
 - Estados de carga, catálogo vacío, error/reintento, formularios inválidos, pocas unidades, agotadas y confirmaciones de acciones.
 - Ubicación enlazada al punto aportado por el usuario; WhatsApp `+595 981 917788`; Instagram `eternabellezapy`.

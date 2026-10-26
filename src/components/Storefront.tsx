@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   ArrowDown,
   ArrowUpRight,
+  Banknote,
   Check,
   Clock3,
   Copy,
@@ -12,6 +13,7 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Landmark,
   X,
 } from 'lucide-react'
 import { CATEGORIES, imageUrl } from '../lib/products'
@@ -24,6 +26,7 @@ import { Modal } from './Modal'
 export const MAP_URL =
   'https://www.google.com/maps/search/?api=1&query=-27.2820707%2C-55.8104614'
 const INSTAGRAM = 'https://www.instagram.com/eternabellezapy/'
+const TIKTOK = 'https://www.tiktok.com/@eternabelleza34'
 const tags = [
   'Un toque de color',
   'Para destacar',
@@ -53,6 +56,27 @@ function External({
     >
       {children}
     </a>
+  )
+}
+
+function PaymentMethods({ compact = false }: { compact?: boolean }) {
+  return (
+    <div
+      className={`payment-methods ${compact ? 'payment-methods-compact' : ''}`}
+      aria-label="Medios de pago"
+    >
+      <span className="payment-methods-title">Medios de pago</span>
+      <div>
+        <span>
+          <Landmark size={12} aria-hidden="true" />
+          Transferencia
+        </span>
+        <span>
+          <Banknote size={13} aria-hidden="true" />
+          Efectivo
+        </span>
+      </div>
+    </div>
   )
 }
 
@@ -374,6 +398,7 @@ export default function Storefront({
                     </span>
                     <h3>{p.name}</h3>
                     <p className="catalog-price">{formatPrice(p.price)}</p>
+                    <PaymentMethods compact />
                     <button onClick={() => open(p)}>
                       {p.stock === 0
                         ? 'Consultar reposición'
@@ -558,6 +583,7 @@ export default function Storefront({
           <Brand footer />
           <div>
             <External href={INSTAGRAM}>Instagram ↗</External>
+            <External href={TIKTOK}>TikTok ↗</External>
             <External href={whatsappUrl()}>WhatsApp ↗</External>
             <a href="#visitanos">Ubicación ↗</a>
             <a href="/admin">Acceso propietario ↗</a>
@@ -605,6 +631,7 @@ export default function Storefront({
                 {formatPrice(selected.price)} ·{' '}
                 {selected.stock > 0 ? 'Disponible' : 'Agotada'}
               </p>
+              <PaymentMethods />
               <p>
                 Confirmá el precio, los talles y la disponibilidad de esta
                 prenda con nosotras.

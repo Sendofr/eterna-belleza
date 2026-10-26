@@ -1,5 +1,17 @@
 # Validación de la primera versión
 
+## Actualización de inventario y finanzas — 2026-10-26
+
+- `npm run build`: TypeScript y compilación para Netlify aprobados. No se agregaron dependencias ni funciones de servidor al hosting.
+- `npm test`: 50 pruebas aprobadas, incluyendo generación de códigos, migración de demostración previa, costos privados, paginación de más de 1000 registros, errores, transacciones locales y resumen por mes.
+- `npm run test:e2e`: 10 pruebas completas aprobadas en Chromium. Cubren altas sin nombre ni SKU, categorías nuevas, pagos, TikTok, WebP, ventas, gastos editables, anulaciones, stock, costos históricos, meses separados y móvil.
+- `node supabase/tests/validate-finance.mjs` con `PGLITE_MODULE` configurado: 43 comprobaciones PostgreSQL aprobadas. Incluyen migración repetible, datos previos, numeración después de 9999, privacidad por RLS, guardado atómico, ventas idempotentes y anulaciones.
+- Capturas nuevas: [Finanzas escritorio](review/finanzas-desktop.png) y [Finanzas móvil](review/finanzas-mobile.png). Se usaron movimientos ficticios en una sesión de demostración aislada únicamente para mostrar el diseño; no se insertan ganancias de ejemplo en la aplicación ni en Supabase.
+
+El proyecto Supabase remoto sigue sin estar disponible para esta validación. Antes de desplegar esta actualización, ejecutar la migración indicada en [FINANZAS.md](FINANZAS.md). Las pruebas SQL usan PostgreSQL embebido con esquemas Auth/Storage simulados; no prueban credenciales ni conectividad remota.
+
+## Registro de la primera versión
+
 Ejecutada en esta instancia el 2026-10-25 con Node 24.19.0, npm 11.9.0 y Chromium de sistema.
 
 - `npm ci --cache /tmp/eterna-npm-cache --no-audit --no-fund`: instalación repetible con lockfile, correcta.

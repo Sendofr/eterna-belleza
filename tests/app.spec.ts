@@ -2,14 +2,24 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
-const STORE = 'eterna-belleza-products-v1'
+const STORE = 'eterna-belleza-state-v2'
 
 async function openInventory(page: Page) {
   await page.goto('/admin')
-  await expect(page.getByText('No es el acceso a la cuenta de Zuni Bogado.', { exact: false })).toBeVisible()
-  await page.getByRole('button', { name: 'Explorar inventario de ejemplo' }).click()
-  await expect(page.getByRole('heading', { name: 'Tu inventario.' })).toBeVisible()
-  await expect(page.getByText('Guardado en este navegador', { exact: true })).toBeVisible()
+  await expect(
+    page.getByText('No es el acceso a la cuenta de Zuni Bogado.', {
+      exact: false,
+    }),
+  ).toBeVisible()
+  await page
+    .getByRole('button', { name: 'Explorar inventario de ejemplo' })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: 'Tu inventario.' }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('Guardado en este navegador', { exact: true }),
+  ).toBeVisible()
 }
 
 function productRow(page: Page, sku: string) {
@@ -17,33 +27,80 @@ function productRow(page: Page, sku: string) {
 }
 
 async function storedProducts(page: Page) {
-  return page.evaluate(key => JSON.parse(localStorage.getItem(key) || '[]'), STORE)
+  return page.evaluate(
+    (key) =>
+      JSON.parse(localStorage.getItem(key) || '{"products":[]}').products,
+    STORE,
+  )
 }
 
-async function newProduct(page: Page, name: string, sku: string, price: string, stock = '1') {
-  await page.getByRole('button', { name: 'Nueva prenda', exact: true }).first().click()
+async function newProduct(
+  page: Page,
+  name: string,
+  price: string,
+  stock = '1',
+  category = 'Vestidos',
+) {
+  await page
+    .getByRole('button', { name: 'Nueva prenda', exact: true })
+    .first()
+    .click()
   const modal = page.getByRole('dialog', { name: 'Una nueva prenda.' })
-  await modal.getByLabel('Nombre de la prenda').fill(name)
-  await modal.getByLabel('Código / SKU').fill(sku)
-  await modal.getByLabel('Precio (Gs.)').fill(price)
+  await modal.getByLabel(/Nombre de la prenda/).fill(name)
+  await modal
+    .getByRole('combobox', { name: /^Categoría/ })
+    .selectOption(category)
+  await modal.getByLabel('Precio de venta (Gs.)', { exact: true }).fill(price)
   await modal.getByLabel('Unidades en stock').fill(stock)
   await modal.getByRole('button', { name: 'Guardar prenda' }).click()
   await expect(modal).not.toBeVisible()
-  await expect(productRow(page, sku)).toBeVisible()
+  await expect(productRow(page, name)).toBeVisible()
 }
 
-test('catálogo: estructura, categorías, búsqueda, orden y diálogo accesible', async ({ page }) => {
+test('catálogo: estructura, categorías, búsqueda, orden y diálogo accesible', async ({
+  page,
+}) => {
   await page.goto('/')
   await expect(page.locator('.product')).toHaveCount(5)
   await expect(page.locator('.demo-note')).toContainText('Colección de muestra')
-  await expect(page.locator('main > section').evaluateAll(els => els.map(el => el.id || el.className))).resolves.toEqual([
-    'inicio', 'coleccion', 'esencia', 'how wrap', 'visitanos', 'last-cta',
+  await expect(page.getByRole('link', { name: /TikTok/ })).toHaveAttribute(
+    'href',
+    'https://www.tiktok.com/@eternabelleza34',
+  )
+  for (const category of ['Shorts', 'Blazers', 'Camisas', 'Infantiles']) {
+    await expect(
+      page.getByRole('button', { name: category, exact: true }),
+    ).toBeVisible()
+  }
+  await expect(page.locator('.product').first()).toContainText('Transferencia')
+  await expect(page.locator('.product').first()).toContainText('Efectivo')
+  await expect(
+    page
+      .locator('main > section')
+      .evaluateAll((els) => els.map((el) => el.id || el.className)),
+  ).resolves.toEqual([
+    'inicio',
+    'coleccion',
+    'esencia',
+    'how wrap',
+    'visitanos',
+    'last-cta',
   ])
   const nav = page.getByRole('navigation', { name: 'Navegación principal' })
-  await expect(nav.getByRole('link')).toHaveText(['La colección', 'Nuestra esencia', 'Visitanos', 'Soy el dueño'])
+  await expect(nav.getByRole('link')).toHaveText([
+    'La colección',
+    'Nuestra esencia',
+    'Visitanos',
+    'Soy el dueño',
+  ])
   await page.getByRole('button', { name: 'Tops', exact: true }).click()
-  await expect(page.locator('.product h3')).toHaveText(['Top naranja', 'Top rojo'])
-  await expect(page.getByRole('button', { name: 'Tops', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.locator('.product h3')).toHaveText([
+    'Top naranja',
+    'Top rojo',
+  ])
+  await expect(
+    page.getByRole('button', { name: 'Tops', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Pantalones', exact: true }).click()
   await expect(page.locator('.product')).toHaveCount(0)
   await expect(page.getByText('Todavía no encontramos ese look.')).toBeVisible()
@@ -52,15 +109,34 @@ test('catálogo: estructura, categorías, búsqueda, orden y diálogo accesible'
   await page.getByRole('searchbox', { name: 'Buscar prendas' }).fill('DEMO-004')
   await expect(page.locator('.product h3')).toHaveText(['Look sport'])
   await page.getByRole('searchbox', { name: 'Buscar prendas' }).fill('')
-  await page.getByRole('combobox', { name: 'Ordenar prendas' }).selectOption('name')
-  await expect(page.locator('.product h3')).toHaveText(['Look sport', 'Top naranja', 'Top rojo', 'Vestido blanco', 'Vestido tropical'])
+  await page
+    .getByRole('combobox', { name: 'Ordenar prendas' })
+    .selectOption('name')
+  await expect(page.locator('.product h3')).toHaveText([
+    'Look sport',
+    'Top naranja',
+    'Top rojo',
+    'Vestido blanco',
+    'Vestido tropical',
+  ])
 
-  const trigger = page.getByRole('button', { name: 'Ver y consultar Vestido tropical', exact: true })
+  const trigger = page.getByRole('button', {
+    name: 'Ver y consultar Vestido tropical',
+    exact: true,
+  })
   await trigger.click()
-  const dialog = page.getByRole('dialog', { name: 'Detalle de Vestido tropical' })
+  const dialog = page.getByRole('dialog', {
+    name: 'Detalle de Vestido tropical',
+  })
   await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('Transferencia')
+  await expect(dialog).toContainText('Efectivo')
   await expect(dialog.getByLabel('Tu consulta')).toHaveValue(/DEMO-001/)
-  const url = new URL((await dialog.getByRole('link', { name: 'Abrir WhatsApp' }).getAttribute('href'))!)
+  const url = new URL(
+    (await dialog
+      .getByRole('link', { name: 'Abrir WhatsApp' })
+      .getAttribute('href'))!,
+  )
   expect(url.hostname).toBe('wa.me')
   expect(url.pathname).toBe('/595981917788')
   expect(url.searchParams.get('text')).toContain('Vestido tropical')
@@ -68,66 +144,109 @@ test('catálogo: estructura, categorías, búsqueda, orden y diálogo accesible'
   await page.keyboard.press('Escape')
   await expect(dialog).not.toBeVisible()
   await expect(trigger).toBeFocused()
-  await expect(page.getByRole('link', { name: 'Cómo llegar' })).toHaveAttribute('href', /-27\.2820707%2C-55\.8104614/)
+  await expect(page.getByRole('link', { name: 'Cómo llegar' })).toHaveAttribute(
+    'href',
+    /-27\.2820707%2C-55\.8104614/,
+  )
   await page.screenshot({ path: '/tmp/eterna-desktop.png', fullPage: true })
 })
 
-test('móvil: menú, catálogo y modal sin desbordamiento horizontal', async ({ page }) => {
+test('móvil: menú, catálogo y modal sin desbordamiento horizontal', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   await expect(page.locator('.product')).toHaveCount(5)
   const menu = page.getByRole('button', { name: 'Abrir menú', exact: true })
   await menu.click()
-  await expect(page.getByRole('button', { name: 'Cerrar menú' })).toHaveAttribute('aria-expanded', 'true')
-  await page.getByRole('navigation').getByRole('link', { name: 'La colección' }).click()
+  await expect(
+    page.getByRole('button', { name: 'Cerrar menú' }),
+  ).toHaveAttribute('aria-expanded', 'true')
+  await page
+    .getByRole('navigation')
+    .getByRole('link', { name: 'La colección' })
+    .click()
   await expect(menu).toHaveAttribute('aria-expanded', 'false')
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.getByRole('button', { name: 'Ver y consultar Vestido blanco', exact: true }).click()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
+  await page
+    .getByRole('button', {
+      name: 'Ver y consultar Vestido blanco',
+      exact: true,
+    })
+    .click()
   const dialog = page.getByRole('dialog', { name: 'Detalle de Vestido blanco' })
   await expect(dialog).toBeVisible()
-  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true,
+  )
   await page.keyboard.press('Escape')
   await page.screenshot({ path: '/tmp/eterna-mobile.png', fullPage: true })
   await page.setViewportSize({ width: 320, height: 740 })
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
 })
 
-test('inventario: crear con PNG convertido realmente a WebP, editar, persistir, stock, visibilidad, archivar, restaurar y CSV', async ({ page, context }) => {
+test('inventario: crear con PNG convertido realmente a WebP, editar, persistir, stock, visibilidad, archivar, restaurar y CSV', async ({
+  page,
+  context,
+}) => {
   await openInventory(page)
   await page.getByRole('button', { name: 'Nueva prenda', exact: true }).click()
   const modal = page.getByRole('dialog', { name: 'Una nueva prenda.' })
   const save = modal.getByRole('button', { name: 'Guardar prenda' })
-  await expect(save).toBeDisabled()
-  await modal.getByLabel('Nombre de la prenda').fill('Blusa rosa de prueba')
-  await expect(save).toBeDisabled()
-  await modal.getByLabel('Código / SKU').fill('EB-E2E-001')
+  await expect(modal.getByLabel(/Código/)).not.toBeEditable()
+  await modal.getByLabel(/Nombre de la prenda/).fill('Blusa rosa de prueba')
   await modal.getByRole('combobox', { name: /^Categoría/ }).selectOption('Tops')
   await modal.getByLabel('Talle', { exact: true }).fill('M')
-  await modal.getByLabel('Precio (Gs.)').fill('85000')
+  await modal.getByLabel('Precio de venta (Gs.)', { exact: true }).fill('85000')
+  await modal
+    .getByLabel('Precio de compra (Gs.)', { exact: true })
+    .fill('40000')
   await modal.getByLabel('Unidades en stock').fill('-1')
   await expect(save).toBeDisabled()
   await modal.getByLabel('Unidades en stock').fill('1')
   const png = await page.evaluate(() => {
     const canvas = document.createElement('canvas')
-    canvas.width = 2000; canvas.height = 1200
+    canvas.width = 2000
+    canvas.height = 1200
     const ctx = canvas.getContext('2d')!
-    ctx.fillStyle = '#e64c7c'; ctx.fillRect(0, 0, 2000, 1200)
-    ctx.fillStyle = '#fff'; ctx.fillRect(300, 300, 800, 600)
+    ctx.fillStyle = '#e64c7c'
+    ctx.fillRect(0, 0, 2000, 1200)
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(300, 300, 800, 600)
     return canvas.toDataURL('image/png').split(',')[1]
   })
-  await modal.locator('input[type=file]').setInputFiles({ name: 'blusa.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') })
+  await modal
+    .locator('input[type=file]')
+    .setInputFiles({
+      name: 'blusa.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(png, 'base64'),
+    })
   await expect(modal.getByText(/WebP listo/)).toBeVisible()
   await save.click()
   await expect(modal).not.toBeVisible()
-  const row = productRow(page, 'EB-E2E-001')
+  const row = productRow(page, 'EB-0001')
   await expect(row).toContainText('Blusa rosa de prueba')
-  const created = (await storedProducts(page)).find((p: { sku: string }) => p.sku === 'EB-E2E-001')
+  const created = (await storedProducts(page)).find(
+    (p: { sku: string }) => p.sku === 'EB-0001',
+  )
+  expect(created).not.toHaveProperty('purchase_cost')
   expect(created.image_path).toMatch(/^data:image\/webp;base64,/)
   const bytes = Buffer.from(created.image_path.split(',')[1], 'base64')
   expect(bytes.subarray(0, 4).toString()).toBe('RIFF')
   expect(bytes.subarray(8, 12).toString()).toBe('WEBP')
   const dimensions = await page.evaluate(async (dataUrl: string) => {
-    const img = new Image(); img.src = dataUrl; await img.decode()
+    const img = new Image()
+    img.src = dataUrl
+    await img.decode()
     return [img.naturalWidth, img.naturalHeight]
   }, created.image_path)
   expect(dimensions).toEqual([1600, 960])
@@ -135,22 +254,42 @@ test('inventario: crear con PNG convertido realmente a WebP, editar, persistir, 
 
   await row.getByRole('button', { name: 'Editar', exact: true }).click()
   const edit = page.getByRole('dialog', { name: 'Editá tu prenda.' })
-  await edit.getByLabel('Nombre de la prenda').fill('Blusa rosa editada')
+  await edit.getByLabel(/Nombre de la prenda/).fill('Blusa rosa editada')
   await edit.getByRole('button', { name: 'Guardar prenda' }).click()
   await expect(edit).not.toBeVisible()
   await page.reload()
-  await page.getByRole('button', { name: 'Explorar inventario de ejemplo' }).click()
-  await expect(productRow(page, 'EB-E2E-001')).toContainText('Blusa rosa editada')
-  expect((await storedProducts(page)).find((p: { sku: string }) => p.sku === 'EB-E2E-001').image_path).toBe(created.image_path)
+  await page
+    .getByRole('button', { name: 'Explorar inventario de ejemplo' })
+    .click()
+  await expect(productRow(page, 'EB-0001')).toContainText('Blusa rosa editada')
+  expect(
+    (await storedProducts(page)).find(
+      (p: { sku: string }) => p.sku === 'EB-0001',
+    ).image_path,
+  ).toBe(created.image_path)
 
-  await row.getByRole('button', { name: 'Quitar una unidad de Blusa rosa editada' }).click()
-  await expect(row.getByRole('button', { name: 'Quitar una unidad de Blusa rosa editada' })).toBeDisabled()
+  await row
+    .getByRole('button', { name: 'Quitar una unidad de Blusa rosa editada' })
+    .click()
+  await expect(
+    row.getByRole('button', {
+      name: 'Quitar una unidad de Blusa rosa editada',
+    }),
+  ).toBeDisabled()
   await expect(row).toContainText('Agotada')
   const shop = await context.newPage()
   await shop.goto('/')
   await expect(shop.locator('.product')).toHaveCount(6)
-  await expect(shop.locator('.product').filter({ hasText: 'Blusa rosa editada' })).toContainText('Agotada')
-  await shop.getByRole('combobox', { name: 'Disponibilidad' }).selectOption('available')
+  await expect(shop.locator('.collection')).not.toContainText('40.000')
+  await expect(shop.locator('.collection')).not.toContainText(
+    /Precio de compra/,
+  )
+  await expect(
+    shop.locator('.product').filter({ hasText: 'Blusa rosa editada' }),
+  ).toContainText('Agotada')
+  await shop
+    .getByRole('combobox', { name: 'Disponibilidad' })
+    .selectOption('available')
   await expect(shop.locator('.product')).toHaveCount(5)
 
   await row.getByRole('button', { name: 'Editar', exact: true }).click()
@@ -160,7 +299,9 @@ test('inventario: crear con PNG convertido realmente a WebP, editar, persistir, 
   await expect(row).toContainText('Oculta')
   await shop.reload()
   await expect(shop.locator('.product')).toHaveCount(5)
-  await expect(shop.locator('.product').filter({ hasText: 'Blusa rosa editada' })).toHaveCount(0)
+  await expect(
+    shop.locator('.product').filter({ hasText: 'Blusa rosa editada' }),
+  ).toHaveCount(0)
   await row.getByRole('button', { name: 'Archivar', exact: true }).click()
   await expect(row).toHaveCount(0)
   await page.getByRole('button', { name: 'Archivadas', exact: false }).click()
@@ -173,82 +314,210 @@ test('inventario: crear con PNG convertido realmente a WebP, editar, persistir, 
   await edit.getByLabel('Mostrar en el catálogo de la tienda').check()
   await edit.getByRole('button', { name: 'Guardar prenda' }).click()
   await expect(edit).not.toBeVisible()
-  await row.getByRole('button', { name: 'Agregar una unidad de Blusa rosa editada' }).click()
-  await expect(row.getByRole('button', { name: 'Quitar una unidad de Blusa rosa editada' })).toBeEnabled()
+  await row
+    .getByRole('button', { name: 'Agregar una unidad de Blusa rosa editada' })
+    .click()
+  await expect(
+    row.getByRole('button', {
+      name: 'Quitar una unidad de Blusa rosa editada',
+    }),
+  ).toBeEnabled()
   await shop.reload()
   await expect(shop.locator('.product')).toHaveCount(6)
-  await expect(shop.locator('.product').filter({ hasText: 'Blusa rosa editada' }).locator('img')).toHaveAttribute('src', created.image_path)
+  await expect(
+    shop
+      .locator('.product')
+      .filter({ hasText: 'Blusa rosa editada' })
+      .locator('img'),
+  ).toHaveAttribute('src', created.image_path)
   await shop.close()
 
-  await page.getByRole('searchbox', { name: 'Buscar prenda, código o talle' }).fill('EB-E2E-001')
+  await page
+    .getByRole('searchbox', { name: 'Buscar prenda, código o talle' })
+    .fill('EB-0001')
   await expect(page.locator('tbody tr')).toHaveCount(1)
   const downloadEvent = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Exportar CSV' }).click()
   const download = await downloadEvent
-  expect(download.suggestedFilename()).toMatch(/eterna-belleza-inventario-.*\.csv/)
+  expect(download.suggestedFilename()).toMatch(
+    /eterna-belleza-inventario-.*\.csv/,
+  )
   const csv = await readFile((await download.path())!, 'utf8')
   expect(csv).toContain('Blusa rosa editada')
-  expect(csv).toContain('EB-E2E-001')
+  expect(csv).toContain('EB-0001')
   expect(csv).not.toContain('DEMO-001')
   await page.getByRole('button', { name: 'Salir de la demostración' }).click()
-  await expect(page.getByRole('button', { name: 'Explorar inventario de ejemplo' })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Explorar inventario de ejemplo' }),
+  ).toBeVisible()
 })
 
-test('inventario: errores de imagen y SKU duplicado conservan formulario y datos previos', async ({ page }) => {
+test('inventario: imagen inválida conserva datos y códigos automáticos no se repiten', async ({
+  page,
+}) => {
   await openInventory(page)
   await page.getByRole('button', { name: 'Nueva prenda', exact: true }).click()
   const modal = page.getByRole('dialog', { name: 'Una nueva prenda.' })
-  await modal.getByLabel('Nombre de la prenda').fill('Otra prenda')
-  await modal.getByLabel('Código / SKU').fill('DEMO-001')
-  await modal.locator('input[type=file]').setInputFiles({ name: 'foto.png', mimeType: 'image/png', buffer: Buffer.from('not an image') })
-  await expect(modal.getByRole('alert')).toContainText('No se pudo abrir la imagen')
-  await modal.getByRole('button', { name: 'Guardar prenda' }).click()
-  await expect(modal.getByRole('alert')).toContainText('Ya existe una prenda con ese código / SKU')
-  await expect(modal.getByLabel('Nombre de la prenda')).toHaveValue('Otra prenda')
+  await modal.getByLabel(/Nombre de la prenda/).fill('Otra prenda')
+  await modal
+    .locator('input[type=file]')
+    .setInputFiles({
+      name: 'foto.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from('not an image'),
+    })
+  await expect(modal.getByRole('alert')).toContainText(
+    'No se pudo abrir la imagen',
+  )
+  await expect(modal.getByLabel(/Nombre de la prenda/)).toHaveValue(
+    'Otra prenda',
+  )
   await modal.getByRole('button', { name: 'Cancelar', exact: true }).click()
   await expect(page.locator('tbody tr')).toHaveCount(5)
   await expect(productRow(page, 'DEMO-001')).toContainText('Vestido tropical')
+  await newProduct(page, 'Primera automática', '80000')
+  await newProduct(page, 'Segunda automática', '90000')
+  const products = await storedProducts(page)
+  expect(
+    products.find((p: { name: string }) => p.name === 'Primera automática').sku,
+  ).toBe('EB-0001')
+  expect(
+    products.find((p: { name: string }) => p.name === 'Segunda automática').sku,
+  ).toBe('EB-0002')
+  expect(new Set(products.map((p: { sku: string }) => p.sku)).size).toBe(
+    products.length,
+  )
 })
 
-test('precios ordenados y filtros de administración reflejan datos editados', async ({ page, context }) => {
+test('precios ordenados y filtros de administración reflejan datos editados', async ({
+  page,
+  context,
+}) => {
   await openInventory(page)
-  await newProduct(page, 'Zeta caro', 'EB-PRICE-HIGH', '200000', '0')
-  await newProduct(page, 'Alfa económico', 'EB-PRICE-LOW', '50000', '3')
-  await page.getByRole('combobox', { name: 'Filtrar estado' }).selectOption('empty')
+  await newProduct(page, 'Zeta caro', '200000', '0')
+  await newProduct(page, 'Alfa económico', '50000', '3')
+  await page
+    .getByRole('combobox', { name: 'Filtrar estado' })
+    .selectOption('empty')
   await expect(page.locator('tbody tr')).toHaveCount(1)
   await expect(page.locator('tbody tr')).toContainText('Zeta caro')
-  await page.getByRole('combobox', { name: 'Filtrar estado' }).selectOption('all')
-  await page.getByRole('combobox', { name: 'Filtrar categoría' }).selectOption('Tops')
+  await page
+    .getByRole('combobox', { name: 'Filtrar estado' })
+    .selectOption('all')
+  await page
+    .getByRole('combobox', { name: 'Filtrar categoría' })
+    .selectOption('Tops')
   await expect(page.locator('tbody tr')).toHaveCount(2)
   const shop = await context.newPage()
   await shop.goto('/')
-  await shop.getByRole('combobox', { name: 'Ordenar prendas' }).selectOption('price-asc')
+  await shop
+    .getByRole('combobox', { name: 'Ordenar prendas' })
+    .selectOption('price-asc')
   await expect(shop.locator('.product h3').first()).toHaveText('Alfa económico')
   await expect(shop.locator('.product h3').nth(1)).toHaveText('Zeta caro')
-  await shop.getByRole('combobox', { name: 'Ordenar prendas' }).selectOption('price-desc')
+  await shop
+    .getByRole('combobox', { name: 'Ordenar prendas' })
+    .selectOption('price-desc')
   await expect(shop.locator('.product h3').first()).toHaveText('Zeta caro')
   await expect(shop.locator('.product h3').nth(1)).toHaveText('Alfa económico')
   await shop.close()
 })
 
-test('inventario móvil: navegación, tabla contenida y formulario accesible', async ({ page }) => {
+test('inventario móvil: navegación, tabla contenida y formulario accesible', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openInventory(page)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
-  await page.getByRole('button', { name: 'Abrir navegación', exact: true }).click()
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
+  await page
+    .getByRole('button', { name: 'Abrir navegación', exact: true })
+    .click()
   await page.getByRole('button', { name: 'Archivadas', exact: false }).click()
-  await expect(page.getByRole('heading', { name: 'Tus archivadas.' })).toBeVisible()
-  await expect(page.getByText('Todavía no hay prendas archivadas.')).toBeVisible()
-  await page.getByRole('button', { name: 'Abrir navegación', exact: true }).click()
+  await expect(
+    page.getByRole('heading', { name: 'Tus archivadas.' }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('Todavía no hay prendas archivadas.'),
+  ).toBeVisible()
+  await page
+    .getByRole('button', { name: 'Abrir navegación', exact: true })
+    .click()
   await page.getByRole('button', { name: 'Inventario', exact: false }).click()
-  await page.screenshot({ path: '/tmp/eterna-admin-mobile.png', fullPage: true })
+  await page.screenshot({
+    path: '/tmp/eterna-admin-mobile.png',
+    fullPage: true,
+  })
   await page.getByRole('button', { name: 'Nueva prenda', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Una nueva prenda.' })
   await expect(dialog).toBeVisible()
-  expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
-  await dialog.getByLabel('Nombre de la prenda').fill('Prenda móvil')
-  await dialog.getByLabel('Código / SKU').fill('EB-MOBILE')
+  expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(
+    true,
+  )
+  await dialog.getByLabel(/Nombre de la prenda/).fill('Prenda móvil')
   await dialog.getByRole('button', { name: 'Guardar prenda' }).click()
   await expect(dialog).not.toBeVisible()
-  await expect(productRow(page, 'EB-MOBILE')).toBeVisible()
+  await expect(productRow(page, 'Prenda móvil')).toBeVisible()
+})
+
+test('nuevas categorías filtran las prendas cargadas sin mezclar resultados', async ({
+  page,
+  context,
+}) => {
+  await openInventory(page)
+  for (const category of ['Shorts', 'Blazers', 'Camisas', 'Infantiles']) {
+    await newProduct(page, `Prueba ${category}`, '75000', '1', category)
+  }
+  const shop = await context.newPage()
+  await shop.goto('/')
+  for (const category of ['Shorts', 'Blazers', 'Camisas', 'Infantiles']) {
+    await shop.getByRole('button', { name: category, exact: true }).click()
+    await expect(shop.locator('.product h3')).toHaveText([`Prueba ${category}`])
+  }
+  await shop.close()
+})
+
+test('inventario previo conserva códigos y la carga automática continúa sin pedir nombre ni SKU', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'eterna-belleza-products-v1',
+      JSON.stringify([
+        {
+          id: '00000000-0000-4000-a000-000000000099',
+          name: 'Prenda anterior',
+          sku: 'EB-0099',
+          category: 'Vestidos',
+          size: 'M',
+          price: 60000,
+          stock: 1,
+          image_path: null,
+          visible: true,
+          archived: false,
+          is_example: false,
+        },
+      ]),
+    ),
+  )
+  await openInventory(page)
+  await expect(productRow(page, 'EB-0099')).toContainText('Prenda anterior')
+  await page.getByRole('button', { name: 'Nueva prenda', exact: true }).click()
+  const modal = page.getByRole('dialog', { name: 'Una nueva prenda.' })
+  await modal
+    .getByRole('combobox', { name: /^Categoría/ })
+    .selectOption('Shorts')
+  await modal.getByLabel('Talle', { exact: true }).fill('M')
+  await modal.getByRole('button', { name: 'Guardar prenda' }).click()
+  await expect(modal).not.toBeVisible()
+  await expect(productRow(page, 'EB-0100')).toContainText('Shorts')
+  await expect(productRow(page, 'EB-0099')).toContainText('Prenda anterior')
+  const products = await storedProducts(page)
+  expect(products).toHaveLength(2)
+  expect(
+    products.find((p: { sku: string }) => p.sku === 'EB-0100').name,
+  ).toContain('M')
 })

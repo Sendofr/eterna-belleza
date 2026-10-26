@@ -1838,3 +1838,53 @@ button:disabled {
     animation: none;
   }
 }
+
+.payment-methods {
+  margin: 16px 0 20px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fbe9ed66;
+}
+.payment-methods-title {
+  display: block;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 9px;
+}
+.payment-methods > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.payment-methods > div > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--navy);
+}
+.payment-methods svg {
+  color: var(--green);
+  flex-shrink: 0;
+}
+.payment-methods-compact {
+  padding: 0;
+  border: 0;
+  background: none;
+  margin: 0 0 16px;
+}
+.payment-methods-compact .payment-methods-title {
+  font-size: 7px;
+  letter-spacing: 0.7px;
+  margin-bottom: 6px;
+}
+.payment-methods-compact > div {
+  gap: 6px 10px;
+}
+.payment-methods-compact > div > span {
+  font-size: 8px;
+}

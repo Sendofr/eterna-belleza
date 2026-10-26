@@ -36,11 +36,21 @@ describe('local inventory demonstration', () => {
       (await getProducts()).find((item) => item.id === created.id),
     ).toMatchObject({ name: 'Prenda actualizada', visible: false })
   })
-  it('rejects duplicate SKU ignoring case without overwriting inventory', async () => {
-    await expect(
-      saveProduct({ ...seedProducts[0], sku: 'demo-001' }),
-    ).rejects.toThrow('código')
-    expect(await getProducts()).toHaveLength(5)
+  it('ignores supplied codes, generates unique automatic codes and preserves the code on edit', async () => {
+    const first = await saveProduct({
+      ...seedProducts[0],
+      sku: 'demo-001',
+      name: '',
+    })
+    const second = await saveProduct({ ...seedProducts[0], sku: 'demo-001' })
+    expect(first.sku).toBe('EB-0001')
+    expect(second.sku).toBe('EB-0002')
+    expect(first.name).toBe('Vestidos · A confirmar')
+    const edited = await saveProduct({ ...first, sku: 'EB-9999' }, first.id)
+    expect(edited.sku).toBe('EB-0001')
+    await archiveProduct(second.id, true)
+    expect((await saveProduct({ ...seedProducts[0] })).sku).toBe('EB-0003')
+    expect(await getProducts()).toHaveLength(8)
   })
   it('archives and restores without deleting a product', async () => {
     await archiveProduct(seedProducts[0].id, true)

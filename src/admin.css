@@ -1168,6 +1168,97 @@
 .admin-table-hint {
   display: none;
 }
+.admin-auto-code {
+  background: #fbf2f5 !important;
+  color: #9c5570 !important;
+  border-style: dashed !important;
+  font-variant-numeric: tabular-nums !important;
+}
+.admin-private-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.admin-private-note svg {
+  flex: none;
+  margin-top: 1px;
+}
+.admin-table td small.admin-cost-value,
+.admin-table td small.admin-missing-cost {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 8px;
+}
+.admin-table td small.admin-missing-cost {
+  color: #a27b40;
+}
+.admin-flow-note {
+  border: 1px solid #eadde0;
+  background: linear-gradient(115deg, #fffaf7, #fbedf2);
+  border-radius: 8px;
+  padding: 16px 18px;
+  margin: -8px 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.admin-flow-note > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #826d75;
+  font-size: 10px;
+  line-height: 1.7;
+}
+.admin-flow-note > div > svg {
+  flex: none;
+  color: #bc416d;
+}
+.admin-flow-note strong {
+  color: #71354c;
+  font-weight: 600;
+}
+.admin-flow-note > button {
+  border: 0;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #a33b62;
+  font-size: 10px;
+  white-space: nowrap;
+  padding: 6px 0;
+}
+.admin-error-notice .admin-inline-retry {
+  font-size: 10px;
+  white-space: nowrap;
+  color: #9a2f2f;
+  text-decoration: underline;
+}
+.admin-cost-loading {
+  padding: 80px 20px;
+  text-align: center;
+  color: #947e87;
+  font-size: 12px;
+}
+@media (max-width: 640px) {
+  .admin-flow-note {
+    padding: 13px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 7px;
+  }
+  .admin-flow-note > div {
+    font-size: 9px;
+    gap: 9px;
+  }
+  .admin-flow-note > button {
+    align-self: flex-start;
+    margin-left: 27px;
+  }
+}
 .admin-table-scroll:focus-visible {
   outline: 2px solid #bc416d;
   outline-offset: -2px;
